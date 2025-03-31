@@ -1,11 +1,63 @@
 import json
 import uuid
+import azure.functions as func
 
 from config.azure_config import get_mongo_collection
 from config.jwt_utils import generate_jwt
 from config.password_utils import hash_password, verify_password
-from config.azure_config import get_mongo_collection
+from config.azure_config import get_mongo_collection, get_azure_config
 from config.password_utils import hash_password
+
+config = get_azure_config()
+users_col = get_mongo_collection(config["USERS_COLLECTION_NAME"])
+
+
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Main function to handle HTTP requests and route them to the appropriate function
+    based on the HTTP method and request path.
+    """
+    method = req.method.upper()
+    try:
+        path = req.path  # Get the request path (e.g., "/login")
+
+        if method == "GET":
+            return get_user(req)
+        elif method == "POST" and "login" in path:
+            return login_user(req)
+        elif method == "POST":
+            return create_user(req)
+        elif method == "PUT":
+            return update_user(req)
+        elif method == "DELETE":
+            return delete_user(req)
+        else:
+            return func.HttpResponse("Method not allowed.", status_code=405)
+
+    except Exception as e:
+        return func.HttpResponse(f"Internal server error: {str(e)}", status_code=500)
+
+
+def get_user(req):
+    """
+    Fetch user details based on the userId provided in the query parameters.
+    """
+    try:
+        userId = req.params.get("userId")
+
+        if not userId:
+            return func.HttpResponse("Missing required query parameter: userId", status_code=400)
+
+        user = users_col.find_one({"userId": userId}, {"_id": 0, "password": 0})  # Exclude sensitive fields
+
+        if not user:
+            return func.HttpResponse("User not found.", status_code=404)
+
+        return func.HttpResponse(json.dumps(user), status_code=200, mimetype="application/json")
+
+    except Exception as e:
+        return func.HttpResponse(f"Internal server error: {str(e)}", status_code=500)
+
 
 def create_user(req):
     try:
@@ -17,8 +69,6 @@ def create_user(req):
 
         if not all([first_name, last_name, email, password]):
             return {"status": 400, "body": "Missing required fields."}
-
-        users_col = get_mongo_collection("Users")
 
         # Check if user already exists
         if users_col.find_one({"email": email}):
@@ -70,8 +120,6 @@ def update_user(req):
                 "body": "userId (shard key) and update fields are required."
             }
 
-        users_col = get_mongo_collection("Users")
-
         result = users_col.update_one(
             {"userId": userId},  # Only shard key required
             {"$set": update_fields}
@@ -96,8 +144,6 @@ def delete_user(req):
                 "body": "userId (shard key) is required."
             }
 
-        users_col = get_mongo_collection("Users")
-
         result = users_col.delete_one({"userId": userId})
 
         if result.deleted_count == 0:
@@ -119,7 +165,6 @@ def login_user(req):
         if not email or not password:
             return {"status": 400, "body": "Email and password required."}
 
-        users_col = get_mongo_collection("Users")
         user = users_col.find_one({"email": email})
 
         if not user or not verify_password(password, user["password"]):

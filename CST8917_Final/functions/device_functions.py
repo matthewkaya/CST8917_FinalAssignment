@@ -6,7 +6,42 @@ from azure.iot.hub.models import Device
 from config.azure_config import get_azure_config, get_mongo_collection
 
 config = get_azure_config()
-collection = get_mongo_collection("Devices")
+users_col = get_mongo_collection(config["DEVICES_COLLECTION_NAME"])
+
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Main function to handle HTTP requests and route them to the appropriate function
+    based on the HTTP method and request path.
+    """
+    method = req.method.upper()
+    path = req.route_params.get("path", "").lower()  # Extract path if available
+
+    try:
+        if method == "GET" and "devices" in path:
+            # Handle GET requests for registered devices
+            return get_registred_devices(req)
+
+        elif method == "POST" and "devices" in path:
+            # Handle POST requests to register a new device
+            body = req.get_json()
+            post_register_device(body)
+            return func.HttpResponse("Device registered successfully.", status_code=201)
+
+        elif method == "DELETE" and "devices" in path:
+            # Handle DELETE requests to delete a device
+            return delete_device(req)
+
+        else:
+            # Return 405 for unsupported methods or paths
+            return func.HttpResponse("Method not allowed.", status_code=405)
+
+    except ValueError as ve:
+        logging.error(f"[main] ValueError: {str(ve)}")
+        return func.HttpResponse(str(ve), status_code=400)
+
+    except Exception as e:
+        logging.error(f"[main] Unexpected error: {str(e)}")
+        return func.HttpResponse("Internal server error.", status_code=500)
 
 def get_registred_devices(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("[get_registered_devices] Fetching registered devices with query parameters...")
@@ -42,7 +77,7 @@ def get_registred_devices(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500
         )
 
-def register_device(data: dict):
+def post_register_device(data: dict):
     device_id = data.get("device_id")
     userId = data.get("userId")
 

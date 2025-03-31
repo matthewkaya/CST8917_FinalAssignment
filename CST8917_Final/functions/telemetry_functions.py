@@ -6,20 +6,60 @@ import azure.functions as func
 from .device_functions import validate_device_data
 from azure_services.notification_functions import forward_event, trigger_notification
 from azure_services.cosmosdb_functions import store_data_in_cosmosdb
-from config.azure_config import get_mongo_collection
+from config.azure_config import get_mongo_collection, get_azure_config
+from config.jwt_utils import verify_jwt, authenticate_request
 
-def get_telemetry_data(query_params):
+config = get_azure_config()
+telemetry_col = get_mongo_collection(config["TELEMETRY_COLLECTION_NAME"])
+
+
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Main function to handle HTTP requests and route them to the appropriate function
+    based on the HTTP method and request path.
+    """
+    method = req.method.upper()
+    path = req.route_params.get("path", "").lower()  # Extract path if available
+
+    try:
+        user_id = authenticate_request(req)  # Extract userId from token
+        if method == "GET" and "telemetry" in path:
+            # Handle GET requests for telemetry data
+            query_params = req.params
+            results = get_telemetry_data(query_params, user_id)
+            return func.HttpResponse(json.dumps(results), status_code=200, mimetype="application/json")
+
+        elif method == "POST" and "telemetry" in path:
+            # Handle POST requests for telemetry data
+            body = req.get_json()
+            body["userId"] = user_id  # Add userId to the telemetry data
+            post_telemetry_data(body)
+            return func.HttpResponse("Telemetry data processed successfully.", status_code=201)
+
+        elif method == "DELETE" and "telemetry" in path:
+            # Handle DELETE requests for telemetry data
+            return delete_telemetry_data(req, user_id)
+
+        else:
+            # Return 405 for unsupported methods or paths
+            return func.HttpResponse("Method not allowed.", status_code=405)
+
+    except ValueError as ve:
+        logging.error(f"[main] ValueError: {str(ve)}")
+        return func.HttpResponse(str(ve), status_code=400)
+
+    except Exception as e:
+        logging.error(f"[main] Unexpected error: {str(e)}")
+        return func.HttpResponse("Internal server error.", status_code=500)
+
+def get_telemetry_data(query_params, user_id):
     logging.info("[get_telemetry_data] Fetching telemetry data with filters...")
 
-    userId = query_params.get("userId")
-    if not userId:
-        raise ValueError("Missing required query parameter: userId")
-
+    query = {"userId": user_id}  # Use userId from token
     device_id = query_params.get("device_id")
     sensor_type = query_params.get("sensor_type")
     value = query_params.get("value")
 
-    query = {"userId": userId}
     if device_id:
         query["device_id"] = device_id
     if sensor_type:
@@ -37,21 +77,21 @@ def get_telemetry_data(query_params):
     return results
 
 
-def delete_telemetry_data(req: func.HttpRequest) -> func.HttpResponse:
+def delete_telemetry_data(req: func.HttpRequest, user_id: str) -> func.HttpResponse:
     logging.info("[delete_telemetry_data] Processing telemetry data deletion...")
 
     try:
         body = req.get_json()
-        required_keys = ["device_id", "sensor_type", "timestamp", "dataId", "userId"]
+        required_keys = ["device_id", "sensor_type", "timestamp", "dataId"]
         if not all(k in body for k in required_keys):
             return func.HttpResponse("Missing required telemetry fields.", status_code=400)
 
         query = {
+            "userId": user_id,  # Use userId from token
             "device_id": body["device_id"],
             "sensor_type": body["sensor_type"],
             "timestamp": body["timestamp"],
-            "dataId": body["dataId"],
-            "userId": body["userId"]
+            "dataId": body["dataId"]
         }
 
         logging.info(f"[delete_telemetry_data] Query: {query}")
@@ -68,7 +108,7 @@ def delete_telemetry_data(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"[delete_telemetry_data] Error: {str(e)}")
         return func.HttpResponse("Internal server error.", status_code=500)
 
-def process_telemetry_data(data: dict):
+def post_telemetry_data(data: dict):
     logging.info(f"[process_telemetry_data] Received telemetry data: {data}")
 
     # 1. Validation
@@ -107,4 +147,4 @@ def process_telemetry_data(data: dict):
          logging.error(f"[process_telemetry_data] Error in notification logic: {ex}")
          raise
 
-    #logging.info("[process_telemetry_data] Telemetry data processing complete.")    
+    #logging.info("[process_telemetry_data] Telemetry data processing complete.")

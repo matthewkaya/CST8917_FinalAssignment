@@ -5,8 +5,6 @@ info:
   version: "1.5"
 
 servers:
-  - url: https://cst8917assignment2funcapp.azurewebsites.net/api
-    description: Azure Functions Deployed Environment
   - url: https://psychic-eureka-rx9qg75rj4p2pgv5-7071.app.github.dev/api
     description: GitHub Codespaces Local Environment
 

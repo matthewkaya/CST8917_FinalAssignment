@@ -11,16 +11,7 @@ from config.azure_config import get_azure_config, get_mongo_collection
 from config.jwt_utils import verify_jwt
 from PIL import Image
 
-def authenticate_request(req):
-    auth_header = req.headers.get("Authorization")
-    if not auth_header:
-        return None, "Missing Authorization Header"
-    
-    token = auth_header.replace("Bearer ", "")
-    is_valid, result = verify_jwt(token)
-    if not is_valid:
-        return None, result  # result contains error message
-    return result, None  # result is userId
+
 
 # HTTP Trigger – Image Upload
 def upload_image(req):
