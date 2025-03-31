@@ -1,10 +1,9 @@
 import json
 import uuid
+
 from config.azure_config import get_mongo_collection
 from config.jwt_utils import generate_jwt
 from config.password_utils import hash_password, verify_password
-
-import uuid
 from config.azure_config import get_mongo_collection
 from config.password_utils import hash_password
 

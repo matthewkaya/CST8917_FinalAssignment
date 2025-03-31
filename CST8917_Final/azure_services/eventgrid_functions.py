@@ -1,7 +1,7 @@
 import logging
 from azure.eventgrid import EventGridPublisherClient, EventGridEvent
 from azure.core.credentials import AzureKeyCredential
-from .azure_config import get_azure_config
+from config.azure_config import get_azure_config
 
 config = get_azure_config()
 

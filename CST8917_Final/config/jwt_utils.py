@@ -1,6 +1,6 @@
 import jwt
 import datetime
-from config.azure_config import get_azure_config
+from .azure_config import get_azure_config
 
 config = get_azure_config()
 SECRET_KEY = "AlgonquinCollege" 

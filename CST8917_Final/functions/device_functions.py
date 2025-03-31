@@ -3,7 +3,7 @@ import json
 import azure.functions as func
 from azure.iot.hub import IoTHubRegistryManager
 from azure.iot.hub.models import Device
-from .azure_config import get_azure_config, get_mongo_collection
+from config.azure_config import get_azure_config, get_mongo_collection
 
 config = get_azure_config()
 collection = get_mongo_collection("Devices")

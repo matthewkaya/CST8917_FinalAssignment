@@ -1,14 +1,15 @@
+import io
 import os
 import uuid
 import logging
 import json
 import datetime
-from azure.storage.blob import BlobServiceClient
 import azure.functions as func
+
+from azure.storage.blob import BlobServiceClient
 from config.azure_config import get_azure_config, get_mongo_collection
 from config.jwt_utils import verify_jwt
 from PIL import Image
-import io
 
 def authenticate_request(req):
     auth_header = req.headers.get("Authorization")

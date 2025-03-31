@@ -1,6 +1,6 @@
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
-from config.azure_config import get_azure_config
+from .azure_config import get_azure_config
 
 import os
 import urllib.parse

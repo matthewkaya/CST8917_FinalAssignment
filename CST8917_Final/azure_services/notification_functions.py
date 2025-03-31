@@ -3,8 +3,8 @@ import requests
 import logging
 
 from config.azure_config import get_azure_config, get_mongo_collection
-from .azure_config import get_azure_config
-from .generate_sas_token import generate_sas_token
+from config.azure_config import get_azure_config
+from config.sas_utils import generate_sas_token
 
 import json
 import logging

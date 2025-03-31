@@ -1,6 +1,6 @@
 import logging
 import uuid
-from .azure_config import get_mongo_collection
+from config.azure_config import get_mongo_collection
 
 try:
     # Get the MongoDB collection from config

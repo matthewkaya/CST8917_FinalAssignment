@@ -1,13 +1,12 @@
 import logging
 import logging
 import json
-
-from .validate_device_data import validate_device_data
-from .forward_event import forward_event
-from .store_data_in_cosmosdb import store_data_in_cosmosdb
-from .trigger_notification import trigger_notification
 import azure.functions as func
-from .azure_config import get_mongo_collection
+
+from .device_functions import validate_device_data
+from azure_services.notification_functions import forward_event, trigger_notification
+from azure_services.cosmosdb_functions import store_data_in_cosmosdb
+from config.azure_config import get_mongo_collection
 
 def get_telemetry_data(query_params):
     logging.info("[get_telemetry_data] Fetching telemetry data with filters...")
