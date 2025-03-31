@@ -5,7 +5,7 @@ import azure.functions as func
 
 from .device_functions import validate_device_data
 from azure_services.notification_functions import forward_event, trigger_notification
-from azure_services.cosmosdb_functions import store_data_in_cosmosdb
+from CST8917_Final.azure_services.cosmosdb_services import store_data_in_cosmosdb
 from config.azure_config import get_mongo_collection, get_azure_config
 from config.jwt_utils import verify_jwt, authenticate_request
 

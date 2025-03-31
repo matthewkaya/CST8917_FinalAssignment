@@ -13,7 +13,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
       POST   -> create_user (no authorization required)
       GET    -> get_user (authorization required)
       PUT    -> update_user_put (authorization required)
-      PATCH  -> update_password (no authorization required)
+      PATCH  -> If request body contains 'oldPassword' and 'newPassword', call update_password (no authorization required)
       DELETE -> delete_user (authorization required)
     """
     method = req.method.upper()
@@ -24,7 +24,15 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     elif method == "PUT":
         return update_user_put(req)
     elif method == "PATCH":
-        return update_password(req)
+        try:
+            req_body = req.get_json()
+        except ValueError:
+            return func.HttpResponse("Invalid JSON body", status_code=400)
+        # If 'oldPassword' and 'newPassword' are provided, assume this is a password change request.
+        if "oldPassword" in req_body and "newPassword" in req_body:
+            return update_password(req)
+        else:
+            return func.HttpResponse("PATCH method not used for general updates", status_code=400)
     elif method == "DELETE":
         return delete_user(req)
     else:
@@ -83,7 +91,56 @@ def create_user(req: func.HttpRequest) -> func.HttpResponse:
     
     response_body = {"message": "User created", "token": token}
     return func.HttpResponse(json.dumps(response_body), status_code=201, mimetype="application/json")
-  
+    logging.info("Processing create_user request.")
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON body", status_code=400)
+    
+    # Extract required fields from the request body
+    user_id = req_body.get("userId")
+    first_name = req_body.get("firstName")
+    last_name = req_body.get("lastName")
+    email = req_body.get("email")
+    password = req_body.get("password")
+    phone = req_body.get("phone")  # Optional phone field
+
+    if not user_id or not first_name or not last_name or not email or not password:
+        return func.HttpResponse(
+            "Missing required fields: userId, firstName, lastName, email, password", 
+            status_code=400
+        )
+    
+    # Hash the provided password
+    hashed_pw = hash_password(password)
+    
+    # Prepare the user document according to the specified structure.
+    # The "Devices" field is an array that will hold device objects,
+    # each of which can contain a telemetryData array.
+    user_doc = {
+        "_id": user_id,            # ShardKey (userId)
+        "userId": user_id,
+        "firstName": first_name,
+        "lastName": last_name,
+        "email": email,
+        "password": hashed_pw,
+        "phone": phone,            # Optional phone field
+        "authToken": None,         # Default authentication token is None
+        "Devices": [],             # Devices list (each device will have a telemetryData array)
+        "type": "user"             # Adding type for filtering purposes
+    }
+    
+    cosmos_service = CosmosDBService()
+    # Insert the user document into Cosmos DB
+    insert_result = cosmos_service.insert_document(user_doc)
+    
+    # Generate an authentication token for the new user using userId as payload
+    token = create_token(user_id)
+    # Update the document with the generated token
+    cosmos_service.update_document({"_id": user_id, "type": "user"}, {"authToken": token})
+    
+    response_body = {"message": "User created", "token": token}
+    return func.HttpResponse(json.dumps(response_body), status_code=201, mimetype="application/json")
 
 def get_user(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing get_user request.")
@@ -156,15 +213,15 @@ def update_password(req: func.HttpRequest) -> func.HttpResponse:
     except ValueError:
         return func.HttpResponse("Invalid JSON body", status_code=400)
     
-    # Expecting email, oldPassword, and newPassword in the request body.
-    email = req_body.get("email")
+    # Expecting userId, oldPassword, and newPassword in the request body.
+    user_id = req_body.get("userId")
     old_password = req_body.get("oldPassword")
     new_password = req_body.get("newPassword")
-    if not email or not old_password or not new_password:
-        return func.HttpResponse("Missing required fields: email, oldPassword, newPassword", status_code=400)
+    if not user_id or not old_password or not new_password:
+        return func.HttpResponse("Missing required fields: userId, oldPassword, newPassword", status_code=400)
     
     cosmos_service = CosmosDBService()
-    user = cosmos_service.find_document({"email": email, "type": "user"})
+    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
     if not user:
         return func.HttpResponse("User not found", status_code=404)
     
@@ -175,7 +232,7 @@ def update_password(req: func.HttpRequest) -> func.HttpResponse:
     
     # Hash the new password and update the user document
     hashed_new_pw = hash_password(new_password)
-    result = cosmos_service.update_document({"email": email, "type": "user"}, {"password": hashed_new_pw})
+    result = cosmos_service.update_document({"_id": user_id, "type": "user"}, {"password": hashed_new_pw})
     if result.modified_count == 0:
         return func.HttpResponse("Password not updated", status_code=400)
     

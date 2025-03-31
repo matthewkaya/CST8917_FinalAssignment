@@ -1,136 +1,186 @@
-import logging
 import json
+import logging
 import azure.functions as func
-from azure.iot.hub import IoTHubRegistryManager
-from azure.iot.hub.models import Device
-from config.azure_config import get_azure_config, get_mongo_collection
+from config.jwt_utils import authenticate_user
+from azure_services.cosmosdb_services import CosmosDBService
+from azure_services.iot_hub_functions import IoTHubService
 
-config = get_azure_config()
-users_col = get_mongo_collection(config["DEVICES_COLLECTION_NAME"])
+def register_device(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Processing register_device request.")
+    
+    # Authenticate the user
+    user_id = authenticate_user(req)
+    if isinstance(user_id, func.HttpResponse):  # Check if authentication failed
+        return user_id
+    
+    # Parse the request body
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON body", status_code=400)
+    
+    # Validate required fields
+    device_id = req_body.get("deviceId")
+    device_name = req_body.get("deviceName")  # Optional field
+    if not device_id:
+        return func.HttpResponse("deviceId is required", status_code=400)
+    
+    # IoT Hub: Register the device
+    try:
+        iot_service = IoTHubService()
+        iot_service.register_device_in_iot_hub(req_body)
+    except Exception as e:
+        logging.exception("Failed to register device in IoT Hub.")
+        return func.HttpResponse(f"Failed to register device in IoT Hub: {str(e)}", status_code=500)
+    
+    # CosmosDB: Add the device to the user's Devices array
+    cosmos_service = CosmosDBService()
+    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    if not user:
+        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+    
+    # Prepare the device object
+    device_object = {
+        "deviceId": device_id,
+        "deviceName": device_name,
+        "telemetryData": []  # Initialize with an empty telemetryData array
+    }
+    
+    # Update the user's Devices array
+    result = cosmos_service.update_document(
+        {"_id": user_id, "type": "user"},
+        {"$push": {"Devices": device_object}}
+    )
+    if result.modified_count == 0:
+        return func.HttpResponse("Failed to add device to user's Devices array", status_code=400)
+    
+    return func.HttpResponse(json.dumps({"message": "Device registered successfully"}), status_code=201, mimetype="application/json")
+
+def get_devices(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Processing get_devices request.")
+    
+    # Authenticate the user
+    user_id = authenticate_user(req)
+    if isinstance(user_id, func.HttpResponse):  # Check if authentication failed
+        return user_id
+    
+    # Fetch the user's devices from CosmosDB
+    cosmos_service = CosmosDBService()
+    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    if not user:
+        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+    
+    # Get the devices array from the user document
+    devices = user.get("Devices", [])
+    
+    return func.HttpResponse(json.dumps(devices), status_code=200, mimetype="application/json")
+
+def update_device(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Processing update_device request.")
+    
+    # Authenticate the user
+    user_id = authenticate_user(req)
+    if isinstance(user_id, func.HttpResponse):  # Check if authentication failed
+        return user_id
+    
+    # Parse the request body
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON body", status_code=400)
+    
+    # Validate required fields
+    device_id = req_body.get("deviceId")
+    update_data = req_body.get("update", {})
+    if not device_id or not update_data:
+        return func.HttpResponse("deviceId and update data are required", status_code=400)
+    
+    # Fetch the user's devices from CosmosDB
+    cosmos_service = CosmosDBService()
+    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    if not user:
+        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+    
+    # Check if the device belongs to the user
+    devices = user.get("Devices", [])
+    device = next((d for d in devices if d["deviceId"] == device_id), None)
+    if not device:
+        return func.HttpResponse("Device not found in user's Devices array", status_code=404)
+    
+    # Update the device in the user's Devices array
+    result = cosmos_service.update_document(
+        {"_id": user_id, "type": "user", "Devices.deviceId": device_id},
+        {"$set": {f"Devices.$.{key}": value for key, value in update_data.items()}}
+    )
+    if result.modified_count == 0:
+        return func.HttpResponse("Device not updated", status_code=400)
+    
+    return func.HttpResponse(json.dumps({"message": "Device updated successfully"}), status_code=200, mimetype="application/json")
+
+def delete_device(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Processing delete_device request.")
+    
+    # Authenticate the user
+    user_id = authenticate_user(req)
+    if isinstance(user_id, func.HttpResponse):  # Check if authentication failed
+        return user_id
+    
+    # Parse the request body
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON body", status_code=400)
+    
+    # Validate required fields
+    device_id = req_body.get("deviceId")
+    if not device_id:
+        return func.HttpResponse("deviceId is required", status_code=400)
+    
+    # Fetch the user's devices from CosmosDB
+    cosmos_service = CosmosDBService()
+    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    if not user:
+        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+    
+    # Check if the device belongs to the user
+    devices = user.get("Devices", [])
+    device = next((d for d in devices if d["deviceId"] == device_id), None)
+    if not device:
+        return func.HttpResponse("Device not found in user's Devices array", status_code=404)
+    
+    # Delete the device from IoT Hub
+    try:
+        iot_service = IoTHubService()
+        iot_service.delete_device_from_iot_hub(device_id)
+    except Exception as e:
+        logging.exception("Failed to delete device from IoT Hub.")
+        return func.HttpResponse(f"Failed to delete device from IoT Hub: {str(e)}", status_code=500)
+    
+    # Remove the device from the user's Devices array
+    result = cosmos_service.update_document(
+        {"_id": user_id, "type": "user"},
+        {"$pull": {"Devices": {"deviceId": device_id}}}
+    )
+    if result.modified_count == 0:
+        return func.HttpResponse("Failed to remove device from user's Devices array", status_code=400)
+    
+    return func.HttpResponse(json.dumps({"message": "Device deleted successfully"}), status_code=200, mimetype="application/json")
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Main function to handle HTTP requests and route them to the appropriate function
-    based on the HTTP method and request path.
+    POST  -> register_device (cihaz kaydı)
+    GET   -> get_devices
+    PUT/PATCH -> update_device
+    DELETE -> delete_device
     """
     method = req.method.upper()
-    path = req.route_params.get("path", "").lower()  # Extract path if available
-
-    try:
-        if method == "GET" and "devices" in path:
-            # Handle GET requests for registered devices
-            return get_registred_devices(req)
-
-        elif method == "POST" and "devices" in path:
-            # Handle POST requests to register a new device
-            body = req.get_json()
-            post_register_device(body)
-            return func.HttpResponse("Device registered successfully.", status_code=201)
-
-        elif method == "DELETE" and "devices" in path:
-            # Handle DELETE requests to delete a device
-            return delete_device(req)
-
-        else:
-            # Return 405 for unsupported methods or paths
-            return func.HttpResponse("Method not allowed.", status_code=405)
-
-    except ValueError as ve:
-        logging.error(f"[main] ValueError: {str(ve)}")
-        return func.HttpResponse(str(ve), status_code=400)
-
-    except Exception as e:
-        logging.error(f"[main] Unexpected error: {str(e)}")
-        return func.HttpResponse("Internal server error.", status_code=500)
-
-def get_registred_devices(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("[get_registered_devices] Fetching registered devices with query parameters...")
-
-    try:
-        device_id = req.params.get("device_id")
-        sensor_type = req.params.get("sensor_type")
-        location = req.params.get("location")
-
-        query = {}
-        if device_id:
-            query["device_id"] = device_id
-        if sensor_type:
-            query["sensor_type"] = sensor_type
-        if location:
-            query["location"] = location
-
-        logging.info(f"[get_registered_devices] Query: {query}")
-
-        collection = get_mongo_collection("Devices")
-        devices = list(collection.find(query, {"_id": 0}))  # _id hariç getir
-
-        return func.HttpResponse(
-            json.dumps(devices),
-            status_code=200,
-            mimetype="application/json"
-        )
-
-    except Exception as e:
-        logging.error(f"[get_registered_devices] Error: {str(e)}")
-        return func.HttpResponse(
-            "Failed to retrieve registered devices.",
-            status_code=500
-        )
-
-def post_register_device(data: dict):
-    device_id = data.get("device_id")
-    userId = data.get("userId")
-
-    if not device_id or not userId:
-        raise ValueError("Both 'device_id' and 'userId' are required.")
-
-    registry_manager = IoTHubRegistryManager(config["IOTHUB_CONNECTION_STRING"])
-
-    try:
-        registry_manager.get_device(device_id)
-        logging.info(f"Device '{device_id}' already exists in IoT Hub for user '{userId}'.")
-    except Exception:
-        registry_manager.create_device_with_sas(device_id, "", "", "enabled")
-        logging.info(f"Device '{device_id}' created in IoT Hub for user '{userId}'.")
-
-    collection.insert_one(data)
-    logging.info(f"Device '{device_id}' registered in MongoDB for user '{userId}'.")
-
-# Function: Delete Device
-def delete_device(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("[delete_device] Starting device deletion process.")
-    device_id = req.params.get("device_id")
-
-    if not device_id:
-        return func.HttpResponse("Missing 'device_id' parameter.", status_code=400)
-
-    try:
-        # Delete from IoT Hub
-        registry_manager = IoTHubRegistryManager(config["IOTHUB_CONNECTION_STRING"])
-        registry_manager.delete_device(device_id)
-        logging.info(f"[delete_device] Device '{device_id}' deleted from IoT Hub.")
-
-        # Delete from Cosmos DB
-        collection = get_mongo_collection("Devices")
-        result = collection.delete_one({"device_id": device_id})
-        logging.info(f"[delete_device] Deleted {result.deleted_count} document(s) from Cosmos DB for device_id '{device_id}'.")
-
-        return func.HttpResponse(f"Device '{device_id}' deleted successfully.", status_code=200)
-
-    except Exception as e:
-        logging.error(f"[delete_device] Error: {str(e)}")
-        return func.HttpResponse(f"Error deleting device: {str(e)}", status_code=500)
-
-def validate_device_data(data: dict) -> bool:
-    required_fields = {
-        "device_id": str,
-        "sensor_type": str,
-        "timestamp": str,
-        "value": (int, float, dict)
-    }
-    for field, expected_type in required_fields.items():
-        if field not in data or not isinstance(data[field], expected_type):
-            logging.warning(f"Validation failed: '{field}' missing or invalid type in data: {data}")
-            return False
-    logging.info("Telemetry data validation succeeded.")
-    return True    
+    if method == "POST":
+        return register_device(req)
+    elif method == "GET":
+        return get_devices(req)
+    elif method in ["PUT", "PATCH"]:
+        return update_device(req)
+    elif method == "DELETE":
+        return delete_device(req)
+    else:
+        return func.HttpResponse("Method not allowed", status_code=405)

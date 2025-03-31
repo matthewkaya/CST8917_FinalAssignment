@@ -5,7 +5,7 @@ info:
   version: "1.5"
 
 servers:
-  - url: https://psychic-eureka-rx9qg75rj4p2pgv5-7071.app.github.dev/api
+  - url: https://miniature-disco-x467wrg9gvxf6v6g-7071.app.github.dev/api
     description: GitHub Codespaces Local Environment
 
 paths:
@@ -16,7 +16,7 @@ paths:
         '200':
           description: Server is running
 
-  /user/create:
+  /user:
     post:
       summary: Create a new user
       requestBody:
@@ -34,6 +34,9 @@ paths:
                   type: string
                 password:
                   type: string
+                phone:
+                  type: string
+                  description: Optional phone number
               required:
                 - firstName
                 - lastName
@@ -47,18 +50,33 @@ paths:
               schema:
                 type: object
                 properties:
-                  userId:
-                    type: string
                   message:
                     type: string
-        '409':
-          description: User already exists
+                  token:
+                    type: string
         '400':
           description: Missing required fields
 
-  /user/update:
+    get:
+      summary: Get user details
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: User not found
+
     put:
       summary: Update user information
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -66,51 +84,27 @@ paths:
             schema:
               type: object
               properties:
-                userId:
-                  type: string
-                  description: Shard key of the user
                 firstName:
                   type: string
                 lastName:
                   type: string
                 email:
                   type: string
-              required:
-                - userId
+                phone:
+                  type: string
+                  description: Optional phone number
       responses:
         '200':
           description: User updated successfully
         '400':
-          description: userId (shard key) and update fields are required
+          description: No update data provided
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
         '404':
           description: User not found
 
-  /user/delete:
-    delete:
-      summary: Delete a user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                userId:
-                  type: string
-                  description: Shard key of the user to delete
-              required:
-                - userId
-      responses:
-        '200':
-          description: User deleted successfully
-        '400':
-          description: userId (shard key) is required
-        '404':
-          description: User not found
-
-  /user/login:
-    post:
-      summary: User login
+    patch:
+      summary: Update user password
       requestBody:
         required: true
         content:
@@ -120,69 +114,152 @@ paths:
               properties:
                 email:
                   type: string
-                password:
+                  description: User's email address
+                oldPassword:
+                  type: string
+                newPassword:
                   type: string
               required:
                 - email
-                - password
+                - oldPassword
+                - newPassword
       responses:
         '200':
-          description: Authenticated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  expiryDate:
-                    type: string
-                  userId:
-                    type: string
-        '401':
-          description: Invalid credentials
+          description: Password updated successfully
         '400':
-          description: Missing email or password
+          description: Missing required fields
+        '401':
+          description: Old password does not match
+        '404':
+          description: User not found
 
-  /image/upload:
+    delete:
+      summary: Delete a user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User deleted successfully
+        '400':
+          description: User not deleted
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: User not found
+
+  /device:
     post:
-      summary: Upload an image (Authenticated)
+      summary: Register a new device
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
               properties:
-                image:
+                deviceId:
                   type: string
-                  format: binary
+                deviceName:
+                  type: string
+                  description: Optional device name
               required:
-                - image
+                - deviceId
+      responses:
+        '201':
+          description: Device registered successfully
+        '400':
+          description: Missing required fields
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: User not found
+        '500':
+          description: Failed to register device in IoT Hub
+
+    get:
+      summary: Get all devices for the authenticated user
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: Image uploaded successfully
+          description: Devices retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  imageId:
-                    type: string
-                  imageName:
-                    type: string
-                  originalImageUrl:
-                    type: string
-                  uploadDate:
-                    type: string
+                type: array
+                items:
+                  type: object
+                  properties:
+                    deviceId:
+                      type: string
+                    deviceName:
+                      type: string
+                    telemetryData:
+                      type: array
+                      items:
+                        type: object
         '401':
           description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: User not found
+
+    put:
+      summary: Update a device for the authenticated user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceId:
+                  type: string
+                update:
+                  type: object
+                  description: Fields to update
+              required:
+                - deviceId
+                - update
+      responses:
+        '200':
+          description: Device updated successfully
         '400':
-          description: Image file is required
+          description: Missing required fields
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: Device not found
 
-
+    delete:
+      summary: Delete a device for the authenticated user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceId:
+                  type: string
+              required:
+                - deviceId
+      responses:
+        '200':
+          description: Device deleted successfully
+        '400':
+          description: Missing required fields
+        '401':
+          description: Unauthorized (JWT token missing or invalid)
+        '404':
+          description: Device not found
+        '500':
+          description: Failed to delete device from IoT Hub
 
 components:
   securitySchemes:
@@ -201,21 +278,6 @@ components:
           type: string
           format: date-time
 
-    Image:
-      type: object
-      properties:
-        imageId:
-          type: string
-        imageName:
-          type: string
-        originalImageUrl:
-          type: string
-        resizedImageUrl:
-          type: string
-        uploadDate:
-          type: string
-          format: date-time
-
     User:
       type: object
       properties:
@@ -228,15 +290,16 @@ components:
           type: string
         email:
           type: string
-        password:
+        phone:
           type: string
-          description: Hashed user password
+          description: Optional phone number
         authToken:
           $ref: '#/components/schemas/AuthToken'
-        uploadedImages:
+        Devices:
           type: array
           items:
-            $ref: '#/components/schemas/Image'
+            type: object
+            description: List of devices associated with the user
             
   SasAccessInfo:
     type: object
@@ -245,4 +308,4 @@ components:
         type: string
         description: |
             A time-limited secure URL (SAS token) for accessing the resized image without making the blob container public.
-            This link usually expires after 1 hour and is auto-generated for the user after image resizing.          
+            This link usually expires after 1 hour and is auto-generated for the user after image resizing.

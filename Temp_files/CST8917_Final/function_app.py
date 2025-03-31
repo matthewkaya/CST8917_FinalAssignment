@@ -4,7 +4,7 @@ import logging
 import azure.functions as func
 
 # Import all modules
-from functions import device_functions
+from CST8917_Final.functions import device_functions
 from functions import image_functions
 from functions import telemetry_functions
 from functions import trigger_functions
@@ -17,6 +17,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="ping", methods=["GET"])
 def Ping(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse("Function App is running", status_code=200)
+
 
 @app.function_name(name="SwaggerYaml")
 @app.route(route="swagger", methods=["GET"])
@@ -41,5 +42,5 @@ def SwaggerUI(req: func.HttpRequest) -> func.HttpResponse:
 @app.function_name(name="UserFunctions")
 @app.route(route="user", methods=["POST", "GET", "PUT", "PATCH", "DELETE"])
 def UserManagement(req: func.HttpRequest) -> func.HttpResponse:
-    return user_functions.handle_user_request(req)
-
+    # Dispatch the request to the main function in user_management.py
+    return user_functions.main(req)
