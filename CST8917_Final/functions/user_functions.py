@@ -58,8 +58,9 @@ def create_user(req: func.HttpRequest, user_type: str = "user") -> func.HttpResp
 
     if not first_name or not last_name or not email or not password:
         return func.HttpResponse(
-            "Missing required fields: firstName, lastName, email, password", 
-            status_code=400
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
         )
     
     # Hash the provided password
@@ -91,7 +92,7 @@ def create_user(req: func.HttpRequest, user_type: str = "user") -> func.HttpResp
         {"$set": {"authToken": token}}  # Use $set operator to update the authToken field
     )
     
-    response_body = {"message": f"{user_type.capitalize()} created", "token": token}
+    response_body = {"message": f"{user_type.capitalize()} created successfully", "token": token}
     return func.HttpResponse(json.dumps(response_body), status_code=201, mimetype="application/json")
 
 def create_admin_user(req: func.HttpRequest) -> func.HttpResponse:
@@ -105,7 +106,11 @@ def get_user(req: func.HttpRequest) -> func.HttpResponse:
     auth_header = req.headers.get("Authorization")
     if not auth_header:
         logging.error("Authorization header is missing.")
-        return func.HttpResponse("Authorization header missing", status_code=401)
+        return func.HttpResponse(
+            json.dumps({"message": "Unauthorized"}), 
+            status_code=401, 
+            mimetype="application/json"
+        )
     
     # Extract token from the Authorization header
     token = auth_header.split("Bearer ")[-1]
@@ -131,7 +136,11 @@ def get_user(req: func.HttpRequest) -> func.HttpResponse:
         user = cosmos_service.find_document({"_id": user_id})
         if not user:
             logging.error(f"User not found in CosmosDB for user_id: {user_id}")
-            return func.HttpResponse("User not found", status_code=404)
+            return func.HttpResponse(
+                json.dumps({"message": "User not found"}), 
+                status_code=404, 
+                mimetype="application/json"
+            )
     except Exception as e:
         logging.exception(f"Error while querying CosmosDB for user_id: {user_id}")
         return func.HttpResponse(f"Error querying database: {str(e)}", status_code=500)
@@ -175,7 +184,11 @@ def update_user_put(req: func.HttpRequest) -> func.HttpResponse:
         update_data["phone"] = req_body["phone"]
     
     if not update_data:
-        return func.HttpResponse("No update data provided", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "No update data provided"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Wrap update_data with $set operator
     update_query = {"$set": update_data}
@@ -184,12 +197,20 @@ def update_user_put(req: func.HttpRequest) -> func.HttpResponse:
     try:
         result = cosmos_service.update_document({"_id": user_id}, update_query)
         if result.modified_count == 0:
-            return func.HttpResponse("User not updated", status_code=400)
+            return func.HttpResponse(
+                json.dumps({"message": "User not updated"}), 
+                status_code=400, 
+                mimetype="application/json"
+            )
     except Exception as e:
         logging.error(f"Error while updating user: {str(e)}")
         return func.HttpResponse(f"Error updating user: {str(e)}", status_code=500)
     
-    return func.HttpResponse(json.dumps({"message": "User info updated successfully"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "User updated successfully"}), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def update_password(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing update_password request.")
@@ -204,7 +225,11 @@ def update_password(req: func.HttpRequest) -> func.HttpResponse:
     old_password = req_body.get("oldPassword")
     new_password = req_body.get("newPassword")
     if not email or not old_password or not new_password:
-        return func.HttpResponse("Missing required fields: email, oldPassword, newPassword", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"email": email})
@@ -214,7 +239,11 @@ def update_password(req: func.HttpRequest) -> func.HttpResponse:
     stored_password = user.get("password")
     # Verify the provided old password with the stored hashed password
     if not verify_password(old_password, stored_password):
-        return func.HttpResponse("Old password does not match", status_code=401)
+        return func.HttpResponse(
+            json.dumps({"message": "Old password does not match"}), 
+            status_code=401, 
+            mimetype="application/json"
+        )
     
     # Hash the new password and update the user document
     hashed_new_pw = hash_password(new_password)
@@ -222,7 +251,11 @@ def update_password(req: func.HttpRequest) -> func.HttpResponse:
     if result.modified_count == 0:
         return func.HttpResponse("Password not updated", status_code=400)
     
-    return func.HttpResponse(json.dumps({"message": "Password updated successfully"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Password updated successfully"}), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def delete_user(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing delete_user request.")
@@ -239,9 +272,17 @@ def delete_user(req: func.HttpRequest) -> func.HttpResponse:
     cosmos_service = CosmosDBService()
     result = cosmos_service.delete_document({"_id": user_id})
     if result.deleted_count == 0:
-        return func.HttpResponse("User not deleted", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "User not deleted"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
-    return func.HttpResponse(json.dumps({"message": "User deleted"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "User deleted successfully"}), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def login_user(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing login_user request.")
@@ -256,18 +297,30 @@ def login_user(req: func.HttpRequest) -> func.HttpResponse:
     email = req_body.get("email")
     password = req_body.get("password")
     if not email or not password:
-        return func.HttpResponse("Missing required fields: email, password", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Retrieve the user from CosmosDB
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"email": email})
     if not user:
-        return func.HttpResponse("User not found", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Verify the password
     stored_password = user.get("password")
     if not verify_password(password, stored_password):
-        return func.HttpResponse("Invalid email or password", status_code=401)
+        return func.HttpResponse(
+            json.dumps({"message": "Invalid email or password"}), 
+            status_code=401, 
+            mimetype="application/json"
+        )
     
     # Generate a new token
     user_id = user.get("userId")

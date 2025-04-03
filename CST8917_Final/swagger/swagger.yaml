@@ -5,6 +5,11 @@ info:
   version: "1.5"
 
 servers:
+
+  - url: https://cst8922finalfunctionapp.azurewebsites.net/api
+    description: Azure Function 8922App
+  - url: https://cst8917finalfuncapp.azurewebsites.net/api
+    description: Azure Function 8917App
   - url: https://miniature-disco-x467wrg9gvxf6v6g-7071.app.github.dev/api
     description: GitHub Codespaces Local Environment
 
@@ -441,6 +446,40 @@ paths:
                     latitude:
                       type: string
                       description: Latitude of the location
+                telemetryData:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      eventId:
+                        type: string
+                        description: Unique identifier for the telemetry event
+                      event_date:
+                        type: string
+                        format: date-time
+                        description: Date and time of the telemetry event
+                      values:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            valueType:
+                              type: string
+                              description: Type of the value (e.g., Temperature, Humidity)
+                            value:
+                              type: number
+                              description: Value of the telemetry data
+                      status:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            valueType:
+                              type: string
+                              description: Type of the status (e.g., BatteryLevel, Active)
+                            value:
+                              type: string
+                              description: Status value (e.g., 85, on)
               required:
                 - deviceId
                 - deviceName
@@ -463,44 +502,78 @@ paths:
     put:
       summary: Update a device for the authenticated user
       tags:
-        - Device      
+        - Device
       security:
         - bearerAuth: []
+      parameters:
+        - name: deviceId
+          in: query
+          description: Unique identifier for the device to update
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              description: Fields to update
               properties:
-                deviceId:
+                deviceName:
                   type: string
-                  description: Unique identifier for the device
-                update:
+                  description: Updated name of the device
+                sensorType:
+                  type: string
+                  description: Updated type of sensor
+                location:
                   type: object
-                  description: Fields to update
                   properties:
-                    deviceName:
+                    name:
                       type: string
-                      description: Updated name of the device
-                    sensorType:
+                      description: Updated name of the location
+                    longitude:
                       type: string
-                      description: Updated type of sensor
-                    location:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                          description: Updated name of the location
-                        longitude:
-                          type: string
-                          description: Updated longitude of the location
-                        latitude:
-                          type: string
-                          description: Updated latitude of the location
+                      description: Updated longitude of the location
+                    latitude:
+                      type: string
+                      description: Updated latitude of the location
+                telemetryData:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      eventId:
+                        type: string
+                        description: Unique identifier for the telemetry event
+                      event_date:
+                        type: string
+                        format: date-time
+                        description: Date and time of the telemetry event
+                      values:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            valueType:
+                              type: string
+                              description: Type of the value (e.g., Temperature, Humidity)
+                            value:
+                              type: number
+                              description: Value of the telemetry data
+                      status:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            valueType:
+                              type: string
+                              description: Type of the status (e.g., BatteryLevel, Active)
+                            value:
+                              type: string
+                              description: Status value (e.g., 85, on)
               required:
-                - deviceId
-                - update
+                - deviceName
       responses:
         '200':
           description: Device updated successfully
@@ -687,6 +760,12 @@ paths:
                       value:
                         type: number
                         description: Value of the telemetry data
+                      longitude:
+                        type: string
+                        description: Longitude of the location
+                      latitude:
+                        type: string
+                        description: Latitude of the location  
                 image:
                   type: string
                   format: binary
@@ -1135,8 +1214,19 @@ components:
         telemetryData:
           type: array
           items:
+            $ref: '#/components/schemas/Telemetry'
+        status:
+          type: array
+          description: List of device statuses
+          items:
             type: object
-            description: Telemetry data associated with the device
+            properties:
+              valueType:
+                type: string
+                description: Type of the status (e.g., BatteryLevel, Active)
+              value:
+                type: string
+                description: Status value (e.g., 85, on)
 
     Telemetry:
       type: object
@@ -1163,6 +1253,13 @@ components:
               value:
                 type: number
                 description: Value of the telemetry data
+              longitude:
+                type: string
+                description: Longitude of the location
+              latitude:
+                type: string
+                description: Latitude of the location  
+
         image:
           type: string
           description: URL of the associated image (if any)

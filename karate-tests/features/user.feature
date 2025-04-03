@@ -2,7 +2,11 @@ Feature: User Management API Tests
 
   Background:
     * url baseUrl
-    * header Authorization = authToken
+    * def loginPayload = { email: email, password: password }
+    * def loginResponse = call read('authentication.feature') { requestBody: loginPayload }
+    * def token = loginResponse.token
+    * header Authorization = 'Bearer ' + token
+    * header Content-Type = 'application/json'    
 
   Scenario: Create a new user
     Given path 'user'
@@ -18,10 +22,9 @@ Feature: User Management API Tests
     Then status 200
     And match response.email == 'john.doe@example.com'
 
-  Scenario: Update user information
+  Scenario: Update user informationclear
     Given path 'user'
     And request { "firstName": "Jane", "lastName": "Smith" }
-    And header Content-Type = 'application/json'
     When method put
     Then status 200
     And match response.message == 'User updated successfully'

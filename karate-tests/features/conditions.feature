@@ -2,7 +2,7 @@ Feature: Conditions API Tests
 
   Background:
     * url baseUrl
-    * header Authorization = authToken
+    * header Authorization = 'Bearer ' + token
 
   Scenario: Create a condition
     Given path 'conditions'

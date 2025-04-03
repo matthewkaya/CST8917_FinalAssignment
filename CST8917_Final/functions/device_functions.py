@@ -18,7 +18,11 @@ def register_device(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
     except ValueError:
-        return func.HttpResponse("Invalid JSON body", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Invalid JSON body"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Validate required fields
     device_id = req_body.get("deviceId")
@@ -26,23 +30,39 @@ def register_device(req: func.HttpRequest) -> func.HttpResponse:
     sensor_type = req_body.get("sensorType")
     location = req_body.get("location", {})
     if not device_id or not device_name or not sensor_type or not location.get("name"):
-        return func.HttpResponse("deviceId, deviceName, sensorType, and location.name are required", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # IoT Hub: Register the device
     try:
         iot_service = IoTHubService()
         result = iot_service.register_device_in_iot_hub(req_body)
         if "already exists" in result["message"]:
-            return func.HttpResponse(result["message"], status_code=409)  # Conflict
+            return func.HttpResponse(
+                json.dumps({"message": "Device already exists in IoT Hub"}), 
+                status_code=409, 
+                mimetype="application/json"
+            )
     except Exception as e:
         logging.exception("Failed to register device in IoT Hub.")
-        return func.HttpResponse(f"Failed to register device in IoT Hub: {str(e)}", status_code=500)
+        return func.HttpResponse(
+            json.dumps({"message": f"Failed to register device in IoT Hub: {str(e)}"}), 
+            status_code=500, 
+            mimetype="application/json"
+        )
     
     # CosmosDB: Add the device to the user's Devices array
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"_id": user_id})
     if not user:
-        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Prepare the device object
     device_object = {
@@ -63,10 +83,12 @@ def register_device(req: func.HttpRequest) -> func.HttpResponse:
         {"_id": user_id},
         {"$push": {"Devices": device_object}}
     )
-    #if result.modified_count == 0:
-    #    return func.HttpResponse("Failed to add device to user's Devices array", status_code=400)
     
-    return func.HttpResponse(json.dumps({"message": "Device registered successfully"}), status_code=201, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Device registered successfully"}), 
+        status_code=201, 
+        mimetype="application/json"
+    )
 
 def get_devices(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing get_devices request.")
@@ -80,7 +102,11 @@ def get_devices(req: func.HttpRequest) -> func.HttpResponse:
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"_id": user_id})
     if not user:
-        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Get the devices array from the user document
     devices = user.get("Devices", [])
@@ -130,13 +156,18 @@ def get_devices(req: func.HttpRequest) -> func.HttpResponse:
             filtered_devices.append(device)
     
     # If a specific deviceId is provided, return only that device
-    if device_id:
-        if filtered_devices:
-            return func.HttpResponse(json.dumps(filtered_devices[0]), status_code=200, mimetype="application/json")
-        else:
-            return func.HttpResponse("Device not found", status_code=404)
+    if device_id and not filtered_devices:
+        return func.HttpResponse(
+            json.dumps({"message": "Device not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
-    return func.HttpResponse(json.dumps(filtered_devices), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps(filtered_devices), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def update_device(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing update_device request.")
@@ -150,25 +181,41 @@ def update_device(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
     except ValueError:
-        return func.HttpResponse("Invalid JSON body", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Invalid JSON body"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Validate required fields
     device_id = req_body.get("deviceId")
     update_data = req_body.get("update", {})
     if not device_id or not update_data:
-        return func.HttpResponse("deviceId and update data are required", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Fetch the user's devices from CosmosDB
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"_id": user_id})
     if not user:
-        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Check if the device belongs to the user
     devices = user.get("Devices", [])
     device = next((d for d in devices if d["deviceId"] == device_id), None)
     if not device:
-        return func.HttpResponse("Device not found in user's Devices array", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "Device not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Update the device in the user's Devices array
     result = cosmos_service.update_document(
@@ -176,9 +223,17 @@ def update_device(req: func.HttpRequest) -> func.HttpResponse:
         {"$set": {f"Devices.$.{key}": value for key, value in update_data.items()}}
     )
     if result.modified_count == 0:
-        return func.HttpResponse("Device not updated", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Device not updated"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
-    return func.HttpResponse(json.dumps({"message": "Device updated successfully"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Device updated successfully"}), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def delete_device(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing delete_device request.")
@@ -192,24 +247,40 @@ def delete_device(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
     except ValueError:
-        return func.HttpResponse("Invalid JSON body", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Invalid JSON body"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Validate required fields
     device_id = req_body.get("deviceId")
     if not device_id:
-        return func.HttpResponse("deviceId is required", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Fetch the user's devices from CosmosDB
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"_id": user_id})
     if not user:
-        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Check if the device belongs to the user
     devices = user.get("Devices", [])
     device = next((d for d in devices if d["deviceId"] == device_id), None)
     if not device:
-        return func.HttpResponse("Device not found in user's Devices array", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "Device not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     # Delete the device from IoT Hub
     try:
@@ -217,7 +288,11 @@ def delete_device(req: func.HttpRequest) -> func.HttpResponse:
         iot_service.delete_device_from_iot_hub(device_id)
     except Exception as e:
         logging.exception("Failed to delete device from IoT Hub.")
-        return func.HttpResponse(f"Failed to delete device from IoT Hub: {str(e)}", status_code=500)
+        return func.HttpResponse(
+            json.dumps({"message": f"Failed to delete device from IoT Hub: {str(e)}"}), 
+            status_code=500, 
+            mimetype="application/json"
+        )
     
     # Remove the device from the user's Devices array
     result = cosmos_service.update_document(
@@ -225,9 +300,17 @@ def delete_device(req: func.HttpRequest) -> func.HttpResponse:
         {"$pull": {"Devices": {"deviceId": device_id}}}
     )
     if result.modified_count == 0:
-        return func.HttpResponse("Failed to remove device from user's Devices array", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Failed to remove device from user's Devices array"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
-    return func.HttpResponse(json.dumps({"message": "Device deleted successfully"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Device deleted successfully"}), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     """
@@ -246,4 +329,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     elif method == "DELETE":
         return delete_device(req)
     else:
-        return func.HttpResponse("Method not allowed", status_code=405)
+        return func.HttpResponse(
+            json.dumps({"message": "Method not allowed"}), 
+            status_code=405, 
+            mimetype="application/json"
+        )

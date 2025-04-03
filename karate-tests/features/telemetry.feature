@@ -2,7 +2,7 @@ Feature: Telemetry API Tests
 
   Background:
     * url baseUrl
-    * header Authorization = authToken
+    * header Authorization = 'Bearer ' + token
 
   Scenario: Add telemetry data
     Given path 'telemetry'

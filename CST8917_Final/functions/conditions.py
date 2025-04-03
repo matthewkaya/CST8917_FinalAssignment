@@ -116,7 +116,7 @@ def get_conditions(req_body, user_id):
         logging.info(f"Found {len(conditions)} conditions matching the query.")
     except Exception as e:
         logging.error(f"Error while fetching conditions: {str(e)}")
-        return {"error": "Failed to fetch conditions"}, 500
+        return {"message": "Failed to fetch conditions"}, 500
 
     logging.debug(f"Conditions fetched: {conditions}")
     return {"conditions": conditions}, 200
@@ -173,8 +173,9 @@ def post_condition(req_body, user_id):
     response = {"created_conditions": created_conditions}
     if errors:
         response["errors"] = errors
+        return response, 400
 
-    return response, 201 if created_conditions else 400
+    return response, 201
 
 
 def put_condition(req_body, user_id):
@@ -190,7 +191,7 @@ def put_condition(req_body, user_id):
     condition_id = req_body.get("conditionId")
     if not condition_id:
         logging.error("Missing conditionId in the request body.")
-        return {"error": "conditionId is required"}, 400
+        return {"message": "Missing required fields"}, 400
 
     logging.info(f"Updating condition with conditionId={condition_id}.")
 
@@ -207,7 +208,7 @@ def put_condition(req_body, user_id):
     update_fields = {key: value for key, value in req_body.items() if key not in ["conditionId", "type"]}
     if not update_fields:
         logging.error("No fields provided to update.")
-        return {"error": "No fields to update provided"}, 400
+        return {"message": "No fields to update provided"}, 400
 
     logging.info(f"Fields to update: {update_fields}")
 
@@ -220,7 +221,7 @@ def put_condition(req_body, user_id):
             return {"message": "Condition updated successfully"}, 200
         else:
             logging.warning(f"No condition found with conditionId={condition_id} or no changes made.")
-            return {"error": "Condition not found or no changes made"}, 404
+            return {"message": "Condition not found or no changes made"}, 404
     except Exception as e:
         logging.error(f"Error while updating condition: {str(e)}")
         return {"error": "Failed to update condition"}, 500
@@ -239,7 +240,7 @@ def delete_condition(req_body, user_id):
     condition_id = req_body.get("conditionId")
     if not condition_id:
         logging.error("Missing conditionId in the request body.")
-        return {"error": "conditionId is required"}, 400
+        return {"message": "Missing required fields"}, 400
 
     logging.info(f"Deleting condition with conditionId={condition_id}.")
 
@@ -261,7 +262,7 @@ def delete_condition(req_body, user_id):
             return {"message": "Condition deleted successfully"}, 200
         else:
             logging.warning(f"No condition found with conditionId={condition_id}.")
-            return {"error": "Condition not found"}, 404
+            return {"message": "Condition not found"}, 404
     except Exception as e:
         logging.error(f"Error while deleting condition: {str(e)}")
         return {"error": "Failed to delete condition"}, 500

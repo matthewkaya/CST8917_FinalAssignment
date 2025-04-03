@@ -48,7 +48,11 @@ def post_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     # Validate required fields
     if not device_id or not values:
         logging.error(f"Missing required fields: deviceId={device_id}, values={values}")
-        return func.HttpResponse("deviceId and values are required", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields or invalid data"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Generate telemetry data structure
     telemetry_data = {
@@ -60,14 +64,34 @@ def post_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     
     # CosmosDB: Find the user associated with the deviceId
     cosmos_service = CosmosDBService()
-    logging.debug(f"Searching for user with deviceId={device_id} in CosmosDB.")
-    user = cosmos_service.find_document({"Devices.deviceId": device_id})  # Query updated to find user by deviceId
+    logging.info(f"Searching for user with deviceId={device_id} in CosmosDB.")
+
+    try:
+        user = cosmos_service.find_document({
+            "Devices": {
+                "$elemMatch": {
+                    "deviceId": device_id
+                }
+            }
+        })
+    except Exception as e:
+        logging.exception(f"Error while querying CosmosDB for deviceId={device_id}: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"message": "Error while querying database"}), 
+            status_code=500, 
+            mimetype="application/json"
+        )
+
     if not user:
         logging.error(f"Device with deviceId={device_id} not found in any user's Devices list.")
-        return func.HttpResponse("Device not found in CosmosDB", status_code=404)
-    
+        return func.HttpResponse(
+            json.dumps({"message": "Device not found in CosmosDB"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
+
     logging.info(f"Device found in user: {user['email']}")
-    
+
     # Find the specific device in the user's Devices list
     device = next((d for d in user["Devices"] if d["deviceId"] == device_id), None)
     if not device:
@@ -103,7 +127,11 @@ def post_telemetry(req: func.HttpRequest) -> func.HttpResponse:
         )
         if result.modified_count == 0:
             logging.error(f"Failed to update telemetry data for deviceId={device_id}.")
-            return func.HttpResponse("Failed to add telemetry data to the device", status_code=400)
+            return func.HttpResponse(
+                json.dumps({"message": "Failed to add telemetry data to the device"}), 
+                status_code=400, 
+                mimetype="application/json"
+            )
     except Exception as e:
         logging.exception(f"Error while updating telemetry data for deviceId={device_id}: {str(e)}")
         return func.HttpResponse(f"Error while updating telemetry data: {str(e)}", status_code=500)
@@ -117,7 +145,11 @@ def post_telemetry(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Failed to send telemetry data to IoT Hub: {str(e)}", status_code=500)
     
     logging.info(f"Telemetry data successfully added for deviceId={device_id}.")
-    return func.HttpResponse(json.dumps({"message": "Telemetry data added successfully"}), status_code=201, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Telemetry data added successfully"}), 
+        status_code=201, 
+        mimetype="application/json"
+    )
 
 def get_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing get_telemetry request.")
@@ -139,7 +171,11 @@ def get_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     cosmos_service = CosmosDBService()
     user = cosmos_service.find_document({"_id": user_id})
     if not user:
-        return func.HttpResponse("User not found in CosmosDB", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "User not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
     
     user_devices = user.get("Devices", [])
     if not user_devices:
@@ -148,7 +184,11 @@ def get_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     # Find the specified device
     device = next((d for d in user_devices if d["deviceId"] == device_id), None)
     if not device:
-        return func.HttpResponse("Device not found or access denied", status_code=404)
+        return func.HttpResponse(
+            json.dumps({"message": "Device not found"}), 
+            status_code=404, 
+            mimetype="application/json"
+        )
 
     # Filter telemetry data
     telemetry_data = device.get("telemetryData", [])
@@ -175,7 +215,11 @@ def get_telemetry(req: func.HttpRequest) -> func.HttpResponse:
         filtered_data.append(telemetry)
 
     # Return the filtered telemetry data
-    return func.HttpResponse(json.dumps(filtered_data), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps(filtered_data), 
+        status_code=200, 
+        mimetype="application/json"
+    )
 
 def delete_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing delete_telemetry request.")
@@ -194,7 +238,11 @@ def delete_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     # Gerekli alanları kontrol et
     event_id = req_body.get("eventId")
     if not event_id:
-        return func.HttpResponse("eventId is required", status_code=400)
+        return func.HttpResponse(
+            json.dumps({"message": "Missing required fields"}), 
+            status_code=400, 
+            mimetype="application/json"
+        )
     
     # Kullanıcının cihazlarını al
     cosmos_service = CosmosDBService()
@@ -202,20 +250,38 @@ def delete_telemetry(req: func.HttpRequest) -> func.HttpResponse:
     if not user:
         return func.HttpResponse("User not found in CosmosDB", status_code=404)
     
-    user_devices = [device["deviceId"] for device in user.get("Devices", [])]
+    user_devices = user.get("Devices", [])
     if not user_devices:
         return func.HttpResponse("No devices found for the user", status_code=404)
     
-    # Telemetri verisini kontrol et ve sil
-    telemetry = cosmos_service.find_document({"eventId": event_id, "type": "telemetry", "deviceId": {"$in": user_devices}})
-    if not telemetry:
-        return func.HttpResponse("Telemetry data not found or access denied", status_code=404)
+    # Kullanıcının cihazlarındaki telemetri verilerini tarayarak eventId'yi bul ve sil
+    for device in user_devices:
+        telemetry_data = device.get("telemetryData", [])
+        for telemetry in telemetry_data:
+            if telemetry.get("eventId") == event_id:
+                # Telemetri verisini sil
+                result = cosmos_service.update_document(
+                    {"_id": user["_id"], "Devices.deviceId": device["deviceId"]},
+                    {"$pull": {"Devices.$.telemetryData": {"eventId": event_id}}}
+                )
+                if result.modified_count > 0:
+                    return func.HttpResponse(
+                        json.dumps({"message": "Telemetry data deleted successfully"}), 
+                        status_code=200, 
+                        mimetype="application/json"
+                    )
+                else:
+                    return func.HttpResponse(
+                        json.dumps({"message": "Failed to delete telemetry data"}), 
+                        status_code=400, 
+                        mimetype="application/json"
+                    )
     
-    result = cosmos_service.delete_document({"_id": telemetry["_id"]})
-    if result.deleted_count == 0:
-        return func.HttpResponse("Failed to delete telemetry data", status_code=400)
-    
-    return func.HttpResponse(json.dumps({"message": "Telemetry data deleted successfully"}), status_code=200, mimetype="application/json")
+    return func.HttpResponse(
+        json.dumps({"message": "Telemetry data not found"}), 
+        status_code=404, 
+        mimetype="application/json"
+    )
 
 def check_conditions(device_id: str, values: list):
     """
