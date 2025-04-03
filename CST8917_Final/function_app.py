@@ -1,8 +1,8 @@
 import os
+import logging
 import azure.functions as func
-
-from functions import user_functions, device_functions
-
+from functions import user_functions, device_functions, telemetry_functions, conditions
+from scheduled.trigger_functions import scheduled_cleanup
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -38,8 +38,54 @@ def UserManagement(req: func.HttpRequest) -> func.HttpResponse:
     # Dispatch the request to the main function in user_functions.py
     return user_functions.main(req)
 
+@app.function_name(name="LoginUser")
+@app.route(route="user/login", methods=["POST"])
+def LoginUser(req: func.HttpRequest) -> func.HttpResponse:
+    # Dispatch the request to the login_user function in user_functions.py
+    return user_functions.login_user(req)
+
+
 @app.function_name(name="DeviceFunctions")
-@app.route(route="device", methods=["POST", "GET", "PUT", "PATCH", "DELETE"])
+@app.route(route="devices", methods=["GET"])
 def DeviceManagement(req: func.HttpRequest) -> func.HttpResponse:
     # Dispatch the request to the main function in device_functions.py
     return device_functions.main(req)
+
+@app.function_name(name="DeviceFunction")
+@app.route(route="device", methods=["POST", "PUT", "PATCH", "DELETE"])
+def DeviceManagement(req: func.HttpRequest) -> func.HttpResponse:
+    # Dispatch the request to the main function in device_functions.py
+    return device_functions.main(req)
+
+@app.function_name(name="TelemetryFunctions")
+@app.route(route="telemetry", methods=["POST", "GET", "DELETE"])
+def TelemetryManagement(req: func.HttpRequest) -> func.HttpResponse:
+    # Dispatch the request to the main function in telemetry_functions.py
+    return telemetry_functions.main(req)
+
+@app.function_name(name="CreateAdminUser")
+@app.route(route="user/admin", methods=["POST"])
+def CreateAdminUser(req: func.HttpRequest) -> func.HttpResponse:
+    # Dispatch the request to the create_admin_user function in user_functions.py
+    return user_functions.create_admin_user(req)
+
+@app.function_name(name="GetUsers")
+@app.route(route="users", methods=["GET"])
+def GetUsers(req: func.HttpRequest) -> func.HttpResponse:
+    # Dispatch the request to the get_users function in user_functions.py
+    return user_functions.get_users(req)
+
+@app.function_name(name="ConditionsFunctions")
+@app.route(route="conditions", methods=["POST", "GET", "PUT", "DELETE"])
+def ConditionsManagement(req: func.HttpRequest) -> func.HttpResponse:
+    return conditions.main(req)
+
+@app.function_name(name="ScheduledCleanup")
+@app.schedule(schedule="0 0 0 * * *", arg_name="mytimer", run_on_startup=False, use_monitor=True)
+def ScheduledCleanup(mytimer: func.TimerRequest):
+    """
+    This function is triggered every hour (cron schedule: "0 0 * * * *").
+    It performs cleanup of old images from blob storage and updates MongoDB.
+    """
+    logging.info("Scheduled cleanup function triggered.")
+    scheduled_cleanup(mytimer)

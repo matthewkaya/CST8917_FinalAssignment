@@ -18,3 +18,5 @@ dnspython
 azure-eventhub
 azure-iot-hub
 azure-mgmt-iothub
+azure-cognitiveservices-vision-computervision 
+azure-cognitiveservices-vision-customvision

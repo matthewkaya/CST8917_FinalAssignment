@@ -1,9 +1,10 @@
 import json
 import logging
+import datetime
 import azure.functions as func
 from config.jwt_utils import authenticate_user
-from azure_services.cosmosdb_services import CosmosDBService
-from azure_services.iot_hub_functions import IoTHubService
+from azure_services.cosmosdb_service import CosmosDBService
+from azure_services.iot_hub_service import IoTHubService
 
 def register_device(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing register_device request.")
@@ -21,21 +22,25 @@ def register_device(req: func.HttpRequest) -> func.HttpResponse:
     
     # Validate required fields
     device_id = req_body.get("deviceId")
-    device_name = req_body.get("deviceName")  # Optional field
-    if not device_id:
-        return func.HttpResponse("deviceId is required", status_code=400)
+    device_name = req_body.get("deviceName")
+    sensor_type = req_body.get("sensorType")
+    location = req_body.get("location", {})
+    if not device_id or not device_name or not sensor_type or not location.get("name"):
+        return func.HttpResponse("deviceId, deviceName, sensorType, and location.name are required", status_code=400)
     
     # IoT Hub: Register the device
     try:
         iot_service = IoTHubService()
-        iot_service.register_device_in_iot_hub(req_body)
+        result = iot_service.register_device_in_iot_hub(req_body)
+        if "already exists" in result["message"]:
+            return func.HttpResponse(result["message"], status_code=409)  # Conflict
     except Exception as e:
         logging.exception("Failed to register device in IoT Hub.")
         return func.HttpResponse(f"Failed to register device in IoT Hub: {str(e)}", status_code=500)
     
     # CosmosDB: Add the device to the user's Devices array
     cosmos_service = CosmosDBService()
-    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    user = cosmos_service.find_document({"_id": user_id})
     if not user:
         return func.HttpResponse("User not found in CosmosDB", status_code=404)
     
@@ -43,16 +48,23 @@ def register_device(req: func.HttpRequest) -> func.HttpResponse:
     device_object = {
         "deviceId": device_id,
         "deviceName": device_name,
+        "sensorType": sensor_type,
+        "location": {
+            "name": location.get("name"),
+            "longitude": location.get("longitude", ""),
+            "latitude": location.get("latitude", "")
+        },
+        "registrationDate": datetime.datetime.utcnow().isoformat(),  # Add registration date
         "telemetryData": []  # Initialize with an empty telemetryData array
     }
-    
-    # Update the user's Devices array
+
+    # Add the device to the user's Devices array
     result = cosmos_service.update_document(
-        {"_id": user_id, "type": "user"},
+        {"_id": user_id},
         {"$push": {"Devices": device_object}}
     )
-    if result.modified_count == 0:
-        return func.HttpResponse("Failed to add device to user's Devices array", status_code=400)
+    #if result.modified_count == 0:
+    #    return func.HttpResponse("Failed to add device to user's Devices array", status_code=400)
     
     return func.HttpResponse(json.dumps({"message": "Device registered successfully"}), status_code=201, mimetype="application/json")
 
@@ -66,14 +78,65 @@ def get_devices(req: func.HttpRequest) -> func.HttpResponse:
     
     # Fetch the user's devices from CosmosDB
     cosmos_service = CosmosDBService()
-    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    user = cosmos_service.find_document({"_id": user_id})
     if not user:
         return func.HttpResponse("User not found in CosmosDB", status_code=404)
     
     # Get the devices array from the user document
     devices = user.get("Devices", [])
     
-    return func.HttpResponse(json.dumps(devices), status_code=200, mimetype="application/json")
+    # Extract query parameters
+    device_id = req.params.get("deviceId")
+    device_name = req.params.get("deviceName")
+    telemetry_date = req.params.get("telemetryDate")
+    sensor_type = req.params.get("sensorType")
+    value_type = req.params.get("valueType")
+    value_min = req.params.get("valueMin")
+    value_max = req.params.get("valueMax")
+    
+    # Filter devices based on query parameters
+    filtered_devices = []
+    for device in devices:
+        if device_id and device.get("deviceId") != device_id:
+            continue
+        if device_name and device.get("deviceName") != device_name:
+            continue
+        
+        # Filter telemetry data
+        telemetry_data = device.get("telemetryData", [])
+        matching_telemetry = []
+        for telemetry in telemetry_data:
+            if telemetry_date and telemetry.get("event_date") != telemetry_date:
+                continue
+            if sensor_type and not any(value.get("valueType") == sensor_type for value in telemetry.get("values", [])):
+                continue
+            if value_type or value_min or value_max:
+                for value in telemetry.get("values", []):
+                    if value_type and value.get("valueType") != value_type:
+                        continue
+                    if value_min and value.get("value") < float(value_min):
+                        continue
+                    if value_max and value.get("value") > float(value_max):
+                        continue
+                    matching_telemetry.append(telemetry)
+                    break
+            else:
+                matching_telemetry.append(telemetry)
+        
+        if matching_telemetry:
+            device["telemetryData"] = matching_telemetry
+            filtered_devices.append(device)
+        elif not telemetry_date and not sensor_type and not value_type and not value_min and not value_max:
+            filtered_devices.append(device)
+    
+    # If a specific deviceId is provided, return only that device
+    if device_id:
+        if filtered_devices:
+            return func.HttpResponse(json.dumps(filtered_devices[0]), status_code=200, mimetype="application/json")
+        else:
+            return func.HttpResponse("Device not found", status_code=404)
+    
+    return func.HttpResponse(json.dumps(filtered_devices), status_code=200, mimetype="application/json")
 
 def update_device(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing update_device request.")
@@ -97,7 +160,7 @@ def update_device(req: func.HttpRequest) -> func.HttpResponse:
     
     # Fetch the user's devices from CosmosDB
     cosmos_service = CosmosDBService()
-    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    user = cosmos_service.find_document({"_id": user_id})
     if not user:
         return func.HttpResponse("User not found in CosmosDB", status_code=404)
     
@@ -109,7 +172,7 @@ def update_device(req: func.HttpRequest) -> func.HttpResponse:
     
     # Update the device in the user's Devices array
     result = cosmos_service.update_document(
-        {"_id": user_id, "type": "user", "Devices.deviceId": device_id},
+        {"_id": user_id, "Devices.deviceId": device_id},
         {"$set": {f"Devices.$.{key}": value for key, value in update_data.items()}}
     )
     if result.modified_count == 0:
@@ -138,7 +201,7 @@ def delete_device(req: func.HttpRequest) -> func.HttpResponse:
     
     # Fetch the user's devices from CosmosDB
     cosmos_service = CosmosDBService()
-    user = cosmos_service.find_document({"_id": user_id, "type": "user"})
+    user = cosmos_service.find_document({"_id": user_id})
     if not user:
         return func.HttpResponse("User not found in CosmosDB", status_code=404)
     
@@ -158,7 +221,7 @@ def delete_device(req: func.HttpRequest) -> func.HttpResponse:
     
     # Remove the device from the user's Devices array
     result = cosmos_service.update_document(
-        {"_id": user_id, "type": "user"},
+        {"_id": user_id},
         {"$pull": {"Devices": {"deviceId": device_id}}}
     )
     if result.modified_count == 0:
